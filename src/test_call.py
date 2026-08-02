@@ -16,8 +16,7 @@ payload = {
 # Store what comes back in a variable called `response`.
 response = requests.post(url, json = payload)
 
-# YOU: convert the response to JSON and store it in `data`.
-# Hint: the response object has a .json() method — call it like response.json()
+# YOU: convert the response to JSON and store it in `data`
 data = response.json()
 answer = data['choices'][0]['message']['content']
 # YOU: print `data` so you can see the full structure

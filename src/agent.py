@@ -62,7 +62,6 @@ def run_agent(user_message):
 
             # Look up and run the real Python function.
             # YOU: get the function from available_tools using fn_name, then call it.
-            # Hint: available_tools[fn_name] gives the function; add () to call it.
             result = available_tools[fn_name]()
 
             # Send the tool's result back to the model as a new message.

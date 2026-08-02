@@ -8,3 +8,4 @@ token.json
 *.key
 .DS_Store
 logs/*.log
+logs/*.txt
