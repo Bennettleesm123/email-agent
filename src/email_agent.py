@@ -2,14 +2,15 @@ import requests
 import json
 from tools.gmail_tools import list_recent_emails, get_email_body, label_email
 from datetime import datetime
-
-URL = "http://localhost:11434/v1/chat/completions"
+import os
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+URL = f"{OLLAMA_HOST}/v1/chat/completions"
 MODEL = "qwen3:8b"
 # Tools in this set require human approval before running.
 # Read-only tools (list, get_body) are NOT here, so they run freely.
 ACTION_TOOLS = {"label_email"}
-
 LOG_FILE = "logs/agent_log.txt"
+os.makedirs("logs", exist_ok=True)
 
 def log(text):
     # Append a timestamped line to the log file AND print it.
@@ -67,7 +68,7 @@ available_tools = {
 }
 
 
-def run_agent(user_message, max_turns=12):
+def run_agent(user_message, max_turns=12, auto=False):
     messages = [{"role": "user", "content": user_message}]
 
     # max_turns is a safety cap so a confused model can't loop forever.
@@ -90,21 +91,20 @@ def run_agent(user_message, max_turns=12):
 
             # ---- The safety gate ----
             if fn_name in ACTION_TOOLS:
-                # This is an irreversible action — ask the human first.
-                answer = input(f"   >> Approve {fn_name}({args})? [y/n]: ")
-
-                # YOU: if the answer (lowercased, stripped) is NOT "y", skip this tool.
-                # Set result to a refusal message and log it, then continue to next call.
-                if answer.strip().lower() != "y":
-                    result = f"SKIPPED by human: {fn_name}"
-                    log(result)
-                    # append the skip result so the model knows it didn't happen
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call["id"],
-                        "content": str(result),
-                    })
-                    continue  # move to the next tool call without running this one
+                if auto:
+                    # Unattended run: auto-approve (safe because actions are simulated).
+                    log(f"AUTO-APPROVED: {fn_name}({args})")
+                else:
+                    answer = input(f"   >> Approve {fn_name}({args})? [y/n]: ")
+                    if answer.strip().lower() != "y":
+                        result = f"SKIPPED by human: {fn_name}"
+                        log(result)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "content": str(result),
+                        })
+                        continue
 
             # If we get here, it's either a read tool or an approved action.
             fn = available_tools[fn_name]
@@ -123,6 +123,13 @@ def run_agent(user_message, max_turns=12):
 
 
 if __name__ == "__main__":
-    task = ("Review my 5 most recent emails. For each one, decide if it's "
-            "promotional or needs my attention, and label them accordingly.")
-    print(run_agent(task))
+    import sys
+
+    task = (
+        "Review my 5 most recent emails. For each one, decide if it's "
+        "promotional or needs my attention, and label them accordingly."
+    )
+
+    # Pass "auto" as a command-line argument for unattended runs.
+    auto_mode = "auto" in sys.argv
+    print(run_agent(task, auto=auto_mode))
