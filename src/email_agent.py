@@ -3,9 +3,24 @@ import json
 from tools.gmail_tools import list_recent_emails, get_email_body, label_email
 from datetime import datetime
 import os
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-URL = f"{OLLAMA_HOST}/v1/chat/completions"
-MODEL = "qwen3:8b"
+from dotenv import load_dotenv
+import time
+
+load_dotenv()
+
+PROVIDER = os.environ.get("PROVIDER", "ollama")
+
+if PROVIDER == "ollama":
+    OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    URL = f"{OLLAMA_HOST}/v1/chat/completions"
+    MODEL = "qwen3:8b"
+    HEADERS = {}
+elif PROVIDER == "gemini":
+    URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    MODEL = "gemini-3.5-flash"
+    HEADERS = {"Authorization": f"Bearer {os.environ['GEMINI_API_KEY']}"}
+else:
+    raise ValueError(f"Unknown PROVIDER: {PROVIDER}")
 # Tools in this set require human approval before running.
 # Read-only tools (list, get_body) are NOT here, so they run freely.
 ACTION_TOOLS = {"label_email"}
@@ -74,8 +89,19 @@ def run_agent(user_message, max_turns=12, auto=False):
     # max_turns is a safety cap so a confused model can't loop forever.
     for turn in range(max_turns):
         payload = {"model": MODEL, "messages": messages, "tools": tools}
-        response = requests.post(URL, json=payload)
-        data = response.json()
+        # Retry on rate-limit (429) errors, which the free tier hits easily.
+        for attempt in range(5):
+            response = requests.post(URL, json=payload, headers=HEADERS)
+            data = response.json()
+
+            # A 429 error comes back as a list with an "error" dict inside.
+            if isinstance(data, list) and data and "error" in data[0]:
+                if data[0]["error"].get("code") == 429:
+                    wait = 2 ** attempt  # 1s, 2s, 4s, 8s, 16s — exponential backoff
+                    print(f"[rate limited, waiting {wait}s...]")
+                    time.sleep(wait)
+                    continue  # try again
+            break  # success (or a non-429 error) — stop retrying
         message = data["choices"][0]["message"]
         messages.append(message)
 
